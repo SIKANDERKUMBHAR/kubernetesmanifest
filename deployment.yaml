@@ -36,17 +36,64 @@
 #     targetPort: 5000
 #   selector:
 #     app: flaskdemo
+
+#################################################################>|
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flaskdemo-server
+  namespace: argocd
+  labels:
+    app: flaskdemo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flaskdemo
+  template:
+    metadata:
+      labels:
+        app: flaskdemo
+    spec:
+      containers:
+      - name: flaskdemo
+        image: sikanderali/test:9
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5000          # Flask app typically runs on port 5000
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 5000                 # Probe for the Flask app health check
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+---
 apiVersion: v1
 kind: Service
 metadata:
   name: flaskdemo-service
+  namespace: argocd
   labels:
     app: flaskdemo
 spec:
   type: NodePort
   ports:
-  - port: 80
-    targetPort: 5000
-    nodePort: 30001 # You can select any available port between 30000-32767
+    - name: http
+      port: 80
+      targetPort: 5000        # Target port inside your container (Flask app on port 5000)
+      nodePort: 30001         # Expose service on this NodePort (30001 for HTTP)
   selector:
     app: flaskdemo

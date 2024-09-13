@@ -1,5 +1,135 @@
-## What this does?
-This repo along with https://github.com/saha-rajdeep/kubernetescode creates a Jenkins pipeline with GitOps to deploy code into a Kubernetes cluster. CI part is done via Jenkins and CD part via ArgoCD (GitOps).
 
+---
 
-Please refer to the https://github.com/saha-rajdeep/kubernetescode/blob/main/README.md for the instructions on how to use the codes.
+# Kubernetes Manifests for CICD Project
+
+## Overview
+This repository contains Kubernetes manifests used for deploying a Dockerized Flask application as part of a CI/CD pipeline. In conjunction with the [Code Repository](https://github.com/SIKANDERKUMBHAR/kubernetescode), this setup follows a GitOps approach using ArgoCD to automate the deployment of code changes into the Kubernetes cluster.
+
+The manifests are kept in sync with the repository through ArgoCD, ensuring that any changes to the Docker image are automatically deployed to the cluster.
+
+## ArgoCD Setup
+To use ArgoCD for continuous deployment, follow these steps:
+1. **Install ArgoCD**: Install ArgoCD in your Kubernetes cluster by following the [official ArgoCD installation guide](https://argo-cd.readthedocs.io/en/stable/getting_started/).
+2. **Configure ArgoCD**: Set up ArgoCD to monitor and sync with this repository to ensure continuous deployment of the application.
+
+## File Structure
+The repository is structured as follows:
+
+```bash
+kubernetesmanifest/
+├── deployment.yaml  # Kubernetes deployment manifest
+├── Jenkinsfile      # Jenkins pipeline for updating manifests
+└── README.md        # Project documentation
+```
+
+## Kubernetes Deployment Manifest
+
+The `deployment.yaml` file contains the Kubernetes deployment configuration for the Flask application. It specifies the desired number of replicas, container settings, health checks, and resource allocations.
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flaskdemo-server
+  namespace: argocd
+  labels:
+    app: flaskdemo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flaskdemo
+  template:
+    metadata:
+      labels:
+        app: flaskdemo
+    spec:
+      containers:
+      - name: flaskdemo
+        image: sikanderali/test:9
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5000  # Flask app runs on port 5000
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flaskdemo-service
+  namespace: argocd
+  labels:
+    app: flaskdemo
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 80
+      targetPort: 5000
+      nodePort: 30001  # Expose the Flask app at this NodePort
+  selector:
+    app: flaskdemo
+```
+
+### Key Components:
+- **Deployment**: Defines the desired state of the Flask application, including the Docker image to be used (`sikanderali/test:9`), container probes for health checks, and resource limits/requests.
+- **Service**: Exposes the Flask application on port `80`, mapping to container port `5000`, and uses a NodePort (`30001`) to make the service accessible outside the cluster.
+
+## Jenkinsfile for Manifest Update
+
+The `Jenkinsfile` in this repository defines the process for automatically updating the `deployment.yaml` file with the latest Docker image tag. Once the Jenkins pipeline builds a new Docker image, it updates the Kubernetes manifest and pushes the changes back to this repository, triggering ArgoCD to redeploy the application with the updated image.
+
+```groovy
+node {
+    def app
+
+    stage('Clone repository') {
+        checkout scm
+    }
+
+    stage('Update GIT') {
+        script {
+            catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                withCredentials([usernamePassword(credentialsId: 'github', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+                    sh "git config user.email 'sikanderalikumbhar1@gmail.com'"
+                    sh "git config user.name 'SIKANDERKUMBHAR'"
+                    sh "sed -i 's+sikanderali/test.*+sikanderali/test:${DOCKERTAG}+g' deployment.yaml"
+                    sh "git add ."
+                    sh "git commit -m 'Update Docker tag to ${env.BUILD_NUMBER}'"
+                    sh "git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/${GIT_USERNAME}/kubernetesmanifest.git HEAD:main"
+                }
+            }
+        }
+    }
+}
+```
+
+### Pipeline Explanation:
+1. **Clone repository**: Checks out the latest code from the repository.
+2. **Update GIT**: Updates the Docker image tag in `deployment.yaml` using the environment variable `${DOCKERTAG}` (generated by the Jenkins pipeline), commits the changes, and pushes them back to the main branch.
+
+Once the manifest is updated, ArgoCD detects the changes and redeploys the application with the new Docker image.
+
+## Conclusion
+This repository serves as the manifest repository for a CI/CD pipeline integrating Jenkins and ArgoCD. By utilizing ArgoCD's GitOps capabilities, this repository ensures continuous synchronization between the application’s desired state and the actual state within the Kubernetes cluster. For more details on how the manifests interact with Jenkins and the Docker image building process, refer to the [Code Repository](https://github.com/SIKANDERKUMBHAR/kubernetescode).
+
+---
+
